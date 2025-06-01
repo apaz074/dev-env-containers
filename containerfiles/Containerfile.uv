@@ -1,0 +1,51 @@
+# containerfiles/Containerfile.uv
+# This Containerfile is used to build a Debian 12-based image that includes the 'uv' Python package installer/resolver.
+# It leverages a local base image 'localhost/debian-toolbox-dev:12-0.1' and integrates uv for efficient Python environment management.
+
+# --- Base Image ---
+# Use the pre-built Debian 12 image which already includes Git and Python.
+FROM localhost/debian-toolbox-dev:12-0.1
+
+# --- Image Metadata ---
+# Define labels for the image, including the final image name.
+LABEL name="debian-toolbox-uv" \
+      version="12-0.1" \
+      summary="Debian 12 Toolbox image with uv (Python package installer/resolver) from Astral" \
+      description="Based on debian-toolbox-dev, this image adds uv and configures it for Python development."
+
+# --- Environment Variables (Set early as requested) ---
+# PYTHONUNBUFFERED=1: Ensure Python outputs (stdout, stderr) are sent directly to the terminal
+#                     without being buffered first. This is beneficial for logging in containerized applications.
+ENV PYTHONUNBUFFERED=1
+
+# UV_COMPILE_BYTECODE=1: Instructs uv to compile .pyc (bytecode) files when installing packages.
+#                        This can lead to slightly faster startup times for Python applications.
+#                        Ref: https://docs.astral.sh/uv/guides/integration/docker/#compiling-bytecode
+ENV UV_COMPILE_BYTECODE=1
+
+# UV_LINK_MODE=copy: Configures how uv handles packages from its cache when creating or modifying
+#                    virtual environments. 'copy' ensures files are physically copied, which is generally
+#                    more robust in container environments (especially with layered filesystems)
+#                    compared to hardlinks, and can improve Docker/Podman layer caching.
+#                    Ref: https://docs.astral.sh/uv/guides/integration/docker/#caching
+ENV UV_LINK_MODE=copy
+
+# --- System Update ---
+# Ensure Debian packages are up-to-date.
+# This is run as root, which is the default user for RUN instructions at this stage.
+USER root
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    # Clean up apt cache to reduce final image size
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- Install UV from Astral's official image ---
+# Copy the 'uv' and 'uvx' binaries from the latest official Astral uv image.
+# They are placed directly into /bin/ to make them available in the default PATH.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Note: No explicit CMD or ENTRYPOINT is set, as this image is primarily intended
+# for use with 'toolbox enter', which provides its own entry mechanism and shell.
+# The base image 'localhost/debian-toolbox-dev:12-0.1' should also have appropriate
+# STOPSIGNAL and user handling for Toolbox compatibility.
